@@ -642,7 +642,7 @@ pub const RocTarget = enum {
         var contract: CpuContract = switch (classifyCpuArch(arch)) {
             .x86_64 => switch (level) {
                 .default => .{
-                    .codegen_model = .{ .explicit = &std.Target.x86.cpu.x86_64_v3 },
+                    .codegen_model = .{ .explicit = &std.Target.x86.cpu.x86_64 },
                     .architecture_baseline_features = .empty,
                 },
                 .v1 => .{
