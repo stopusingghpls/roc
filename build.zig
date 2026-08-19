@@ -124,13 +124,6 @@ fn testPlatformRequiresSectionDceHost(platform_dir: []const u8) bool {
     return std.mem.eql(u8, platform_dir, "dylib") or std.mem.eql(u8, platform_dir, "archive");
 }
 
-/// The v1 twin that needs its own test-platform host build.
-fn muslBaselineTestTargetName(target_name: []const u8) ?[]const u8 {
-    if (std.mem.eql(u8, target_name, "x64musl")) return "x64v1musl";
-    if (std.mem.eql(u8, target_name, "arm64musl")) return "arm64v1musl";
-    return null;
-}
-
 fn testHostNeedsLibc(options: TestHostOptions, target: ResolvedTarget) bool {
     if (!options.uses_stack_handler) return false;
 
@@ -2214,18 +2207,6 @@ fn buildAndCopyTestPlatformHostLib(
         omit_frame_pointer,
         options,
     );
-    const baseline_target_name = muslBaselineTestTargetName(target_name);
-    const baseline_lib = if (baseline_target_name) |name| createTestPlatformHostLib(
-        b,
-        b.fmt("test_platform_{s}_host_{s}", .{ platform_dir, name }),
-        b.pathJoin(&.{ "test", platform_dir, "platform/host.zig" }),
-        b.resolveTargetQuery(roc_target.RocTarget.fromString(name).?.llvmTargetQuery()),
-        host_optimize,
-        roc_modules,
-        strip,
-        omit_frame_pointer,
-        options,
-    ) else null;
 
     // The dylib platform produces a Windows DLL, and a DLL only exposes symbols
     // that carry dllexport storage. Unlike ELF/Mach-O shared objects (which
@@ -2240,23 +2221,9 @@ fn buildAndCopyTestPlatformHostLib(
     // Use correct filename for target platform
     const host_filename = if (target.result.os.tag == .windows) "host.lib" else "libhost.a";
     const archive_path = b.pathJoin(&.{ "test", platform_dir, "platform/targets", target_name, host_filename });
-    const baseline_archive_path = if (baseline_target_name) |name|
-        b.pathJoin(&.{ "test", platform_dir, "platform/targets", name, host_filename })
-    else
-        null;
 
     const copy_step = b.addUpdateSourceFiles();
     copy_step.addCopyFileToSource(lib.getEmittedBin(), archive_path);
-    if (baseline_archive_path) |path| {
-        copy_step.addCopyFileToSource(baseline_lib.?.getEmittedBin(), path);
-
-        inline for (.{ "crt1.o", "libc.a" }) |runtime_filename| {
-            copy_step.addCopyFileToSource(
-                b.path(b.pathJoin(&.{ "test/fx/platform/targets", target_name, runtime_filename })),
-                b.pathJoin(&.{ "test", platform_dir, "platform/targets", baseline_target_name.?, runtime_filename }),
-            );
-        }
-    }
 
     // Workaround for Zig bug https://codeberg.org/ziglang/zig/issues/30572
     // Zig's archive generator doesn't add the required padding byte after odd-sized
@@ -2265,14 +2232,6 @@ fn buildAndCopyTestPlatformHostLib(
     if (target.result.os.tag != .windows) {
         const fix_step = FixArchivePaddingStep.create(b, archive_path);
         fix_step.step.dependOn(&copy_step.step);
-
-        if (baseline_archive_path) |path| {
-            const fix_baseline_step = FixArchivePaddingStep.create(b, path);
-            fix_baseline_step.step.dependOn(&copy_step.step);
-            fix_baseline_step.step.dependOn(&fix_step.step);
-            return &fix_baseline_step.step;
-        }
-
         return &fix_step.step;
     }
 
